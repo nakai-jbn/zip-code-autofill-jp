@@ -105,7 +105,7 @@ window.addEventListener('message', event => {
           if (!zipValue || zipValue.length !== 7) { // 7桁でなければ実行しない
             console.warn('郵便番号が7桁ではありません');
             return;
-          }else if(isNaN(zipValue)){
+          } else if (isNaN(zipValue)) {
             console.warn('郵便番号が数字ではありません');
             return;
           }
@@ -114,69 +114,62 @@ window.addEventListener('message', event => {
           const callbackName = 'zipcloud_callback_' + zipValue;
           
           // 1-5. コールバック関数をグローバルに定義
-          window[callbackName] = function(addr) { // ブラウザ全体のコールバックにaddr関数を登録
+          window[callbackName] = function(addr) { 
             
             if (addr && addr.results && addr.results.length > 0) {
-              const result = addr.results[0];
-              
-              // 1-6. HubSpotフィールドに *直接* 値を設定
-              stateInput.value = result.address1 || '';
-              cityInput.value = result.address2 || '';
-              addressInput.value = result.address3 || '';
-              
-              // ★★★ 解決策 ★★★
-              // 1-7. 値を変更したことをHubSpotに通知するため、
-              //      各フィールドでイベントを強制的に発火させる
-
-              // bubbles はバブリングフェーズでイベントが親要素へ伝搬されていくかどうか　http://qiita.com/ari-chel/items/8bc4138d158ec59edba1
-              // cancelable はイベントがキャンセル可能かどうか
-              [stateInput, cityInput, addressInput].forEach(field => {
-                const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-                const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-                field.dispatchEvent(inputEvent);
-                field.dispatchEvent(changeEvent);
-              });
-
+              // A. 結果が1件の場合: そのままセット
+              if (addr.results.length === 1) {
+                const result = addr.results[0];
+                stateInput.value = result.address1 || '';
+                cityInput.value = result.address2 || '';
+                addressInput.value = result.address3 || '';
+                
+                // 1-7. HubSpotに通知するためイベントを発火
+                [stateInput, cityInput, addressInput].forEach(field => {
+                  const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+                  const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                  field.dispatchEvent(inputEvent);
+                  field.dispatchEvent(changeEvent);
+                });
+              } 
+              // B. 結果が複数の場合: モーダルを表示して選択させる（※関数が別途定義されている前提）
+              else if (addr.results.length > 1) {
+                if (typeof showAddressSelectionModal === 'function') {
+                  showAddressSelectionModal(addr.results);
+                } else {
+                  console.warn('複数の住所が見つかりましたが、選択モーダル関数が定義されていません。');
+                }
+              }
             } else {
               console.warn('ZipCloud: 該当する住所が見つかりません', addr);
             }
 
-            if (addr && addr.results) {
-
-              // A. 結果が1件の場合: そのままセット
-              if (addr.results.length === 1) {
-                setAddress(addr.results[0]);
-              // B. 結果が複数の場合: モーダルを表示して選択させる
-              } else if (addr.results.length > 1) {
-                showAddressSelectionModal(addr.results);
-              } else {
-                console.warn('ZipCloud: 該当する住所が見つかりません');
-              }
-
-            
-            // 1-8. クリーンアップ　メモリの節約
-            document.body.removeChild(scriptTag);
+            // 1-8. クリーンアップ
+            const targetScript = document.getElementById(callbackName);
+            if (targetScript) document.body.removeChild(targetScript);
             delete window[callbackName];
-          };
-          
-          // 1-9. スクリプトタグを動的に作成してJSONPリクエストを実行
+          }; // window[callbackName] の終わり
+
+          // 1-9. スクリプトタグを動的に作成
           const scriptTag = document.createElement('script');
+          scriptTag.id = callbackName; // クリーンアップ用にIDを付与
           scriptTag.src = 'https://zipcloud.ibsnet.co.jp/api/search?zipcode=' + zipValue + '&callback=' + callbackName;
           
-          // スクリプトの読み込み(実行ではない)中に発生したエラーは error イベントで追跡することが可能です。
           scriptTag.onerror = function() {
              console.error('API_ERROR: ZipCloud APIへのリクエストに失敗しました');
              document.body.removeChild(scriptTag);
              delete window[callbackName];
           };
+
           document.body.appendChild(scriptTag);
-        });
+        }); // zipInput.addEventListener の終わり
+
       } else {
-        console.error('YubinBango Error: 必要なフォームフィールド (zip, state, city, address_text) が見つかりません。');
+        console.error('YubinBango Error: 必要なフォームフィールドが見つかりません。');
       }
-    }
-  }
-});
+    } // if (form) の終わり
+  } // if (event.data.type...) の終わり
+}); // window.addEventListener の終わり
 </script>
 {% endblock body %}
 
